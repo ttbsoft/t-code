@@ -175,9 +175,21 @@ resolve_remote_version() {
     printf '%s\n' "${tag}"
 }
 
+extract_version() {
+    # tcode --version 출력에서 X.Y.Z 형식의 첫 토큰을 추출.
+    # 여러 줄 출력(예: "T-Code\n  Version  0.1.0\n  Git SHA ...") 도 안전하게 처리.
+    grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1
+}
+
 current_version() {
     if [ -x "${INSTALL_BIN}" ]; then
-        "${INSTALL_BIN}" --version 2>/dev/null | awk 'NF{print $NF; exit}' || printf 'unknown\n'
+        local ver
+        ver="$("${INSTALL_BIN}" --version 2>/dev/null | extract_version)"
+        if [ -n "${ver}" ]; then
+            printf '%s\n' "${ver}"
+        else
+            printf 'unknown\n'
+        fi
     else
         printf 'none\n'
     fi
@@ -289,9 +301,8 @@ action_install() {
     trap - EXIT INT TERM
 
     # 설치된 버전 확인
-    if installed_ver="$("${INSTALL_BIN}" --version 2>/dev/null | awk 'NF{print $NF; exit}')"; then
-        :
-    else
+    installed_ver="$("${INSTALL_BIN}" --version 2>/dev/null | extract_version)"
+    if [ -z "${installed_ver}" ]; then
         installed_ver="unknown"
         warn "tcode --version 호출 실패 — 바이너리는 설치되었지만 실행 검증 안 됨"
     fi
