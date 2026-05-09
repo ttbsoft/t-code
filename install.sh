@@ -15,12 +15,13 @@
 # 특정 버전:
 #   curl -fsSL ... | bash -s -- --version v0.1.0
 #
-# 업데이트:
-#   tcode-update
+# 업데이트 (v0.1.1+):
+#   tcode update              # 최신 release 로 갱신
+#   tcode update --check      # 업데이트 가능 여부만 확인
+#   tcode update --version v0.2.0
 #   (또는 위 한 줄 설치 명령을 다시 실행)
 #
-# 업데이트 가능 여부만 확인:
-#   tcode-update --check
+# 외부에서 update check (binary 없이):
 #   bash install.sh --check-update
 #
 # 제거:
@@ -226,7 +227,7 @@ action_check_update() {
         ok "최신 버전입니다."
     else
         warn "업데이트 가능: ${remote} (현재: ${current})"
-        info "업데이트: tcode-update"
+        info "업데이트: tcode update"
     fi
 }
 
@@ -333,33 +334,19 @@ action_install() {
   "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "release_base": "${TCODE_RELEASE_BASE}",
   "requested_version": "${TCODE_VERSION}",
+  "prefix": "${TCODE_PREFIX}",
   "binary": "${INSTALL_BIN}"
 }
 EOF
 
-    # 업데이트 래퍼 설치 (실제 스크립트 + symlink)
-    cat > "${UPDATER_BIN_TARGET}" <<UPDATER_EOF
-#!/usr/bin/env bash
-# tcode-update — 최신 install.sh 를 다시 받아 실행합니다.
-# 사용법:
-#   tcode-update            # 최신 버전으로 업데이트
-#   tcode-update --check    # 업데이트 가능 여부만 확인
-#   tcode-update --version v0.2.0   # 특정 버전으로 변경
-set -e
-INSTALLER_URL="\${TCODE_INSTALLER_URL:-${INSTALLER_URL_DEFAULT}}"
-ARGS=()
-if [ "\${1:-}" = "--check" ]; then
-    ARGS+=("--check-update")
-    shift
-fi
-ARGS+=("\$@")
-exec env \\
-    TCODE_PREFIX="${TCODE_PREFIX}" \\
-    TCODE_RELEASE_BASE="${TCODE_RELEASE_BASE}" \\
-    bash -c "curl -fsSL \"\${INSTALLER_URL}\" | bash -s -- \${ARGS[*]+\"\${ARGS[@]}\"}"
-UPDATER_EOF
-    chmod +x "${UPDATER_BIN_TARGET}"
-    ln -sfn "${UPDATER_BIN_TARGET}" "${UPDATER_BIN}"
+    # Legacy tcode-update wrapper 정리 — v0.1.1 부터 `tcode update` 가 대체.
+    if [ -L "${UPDATER_BIN}" ] || [ -e "${UPDATER_BIN}" ]; then
+        rm -f "${UPDATER_BIN}"
+        info "정리: ${UPDATER_BIN} (이제 'tcode update' 사용)"
+    fi
+    if [ -e "${UPDATER_BIN_TARGET}" ]; then
+        rm -f "${UPDATER_BIN_TARGET}"
+    fi
 
     printf '\n'
     if [ "${previous_ver}" = "none" ]; then
@@ -367,7 +354,7 @@ UPDATER_EOF
     else
         ok "업데이트 완료: ${previous_ver} → ${installed_ver}"
     fi
-    info "업데이트 명령: ${UPDATER_BIN}"
+    info "업데이트 명령: tcode update"
 
     if ! printf ':%s:' "${PATH}" | grep -q ":${INSTALL_BIN_DIR}:"; then
         printf '\n'
@@ -385,8 +372,8 @@ ${C_BOLD}빠른 시작${C_RESET}
   ${C_DIM}# 인터랙티브 REPL${C_RESET}
   tcode
 
-  ${C_DIM}# 업데이트${C_RESET}
-  tcode-update
+  ${C_DIM}# 업데이트 (v0.1.1+)${C_RESET}
+  tcode update
 
 자세한 사용법: ${TCODE_RELEASE_BASE}/blob/main/USAGE.md
 EOF
