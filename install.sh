@@ -31,7 +31,8 @@
 #   TCODE_RELEASE_BASE   릴리스 베이스 URL (기본: https://github.com/${TCODE_REPO})
 #   TCODE_VERSION        설치할 버전 (latest | vX.Y.Z), 기본 latest
 #   TCODE_PREFIX         설치 prefix, 기본 $HOME/.local
-#                        (바이너리는 $TCODE_PREFIX/bin/tcode 에 저장)
+#                        실제 바이너리: $TCODE_PREFIX/share/tcode/bin/tcode
+#                        PATH 진입점:   $TCODE_PREFIX/bin/tcode  (symlink)
 
 set -euo pipefail
 
@@ -45,8 +46,11 @@ TCODE_VERSION="${TCODE_VERSION:-latest}"
 TCODE_PREFIX="${TCODE_PREFIX:-$HOME/.local}"
 
 INSTALL_BIN_DIR="${TCODE_PREFIX}/bin"
-INSTALL_BIN="${INSTALL_BIN_DIR}/tcode"
-UPDATER_BIN="${INSTALL_BIN_DIR}/tcode-update"
+INSTALL_LIB_DIR="${TCODE_PREFIX}/share/tcode/bin"
+INSTALL_BIN="${INSTALL_BIN_DIR}/tcode"               # PATH 진입 symlink
+INSTALL_BIN_TARGET="${INSTALL_LIB_DIR}/tcode"        # 실제 바이너리
+UPDATER_BIN="${INSTALL_BIN_DIR}/tcode-update"        # PATH 진입 symlink
+UPDATER_BIN_TARGET="${INSTALL_LIB_DIR}/tcode-update" # 실제 스크립트
 META_DIR="${HOME}/.tcode"
 META_FILE="${META_DIR}/install.json"
 INSTALLER_URL_DEFAULT="https://raw.githubusercontent.com/${TCODE_REPO}/main/install.sh"
@@ -92,8 +96,11 @@ while [ "$#" -gt 0 ]; do
             shift
             TCODE_PREFIX="${1:-$HOME/.local}"
             INSTALL_BIN_DIR="${TCODE_PREFIX}/bin"
+            INSTALL_LIB_DIR="${TCODE_PREFIX}/share/tcode/bin"
             INSTALL_BIN="${INSTALL_BIN_DIR}/tcode"
+            INSTALL_BIN_TARGET="${INSTALL_LIB_DIR}/tcode"
             UPDATER_BIN="${INSTALL_BIN_DIR}/tcode-update"
+            UPDATER_BIN_TARGET="${INSTALL_LIB_DIR}/tcode-update"
             ;;
         --check-update)
             ACTION="check"
@@ -229,16 +236,25 @@ action_check_update() {
 
 action_uninstall() {
     local removed=0
-    if [ -e "${INSTALL_BIN}" ]; then
-        rm -f "${INSTALL_BIN}"
-        ok "제거: ${INSTALL_BIN}"
-        removed=1
-    fi
-    if [ -e "${UPDATER_BIN}" ]; then
-        rm -f "${UPDATER_BIN}"
-        ok "제거: ${UPDATER_BIN}"
-        removed=1
-    fi
+    # PATH symlinks
+    for path in "${INSTALL_BIN}" "${UPDATER_BIN}"; do
+        if [ -L "${path}" ] || [ -e "${path}" ]; then
+            rm -f "${path}"
+            ok "제거: ${path}"
+            removed=1
+        fi
+    done
+    # 실제 바이너리
+    for path in "${INSTALL_BIN_TARGET}" "${UPDATER_BIN_TARGET}"; do
+        if [ -e "${path}" ]; then
+            rm -f "${path}"
+            ok "제거: ${path}"
+            removed=1
+        fi
+    done
+    # 빈 디렉터리 정리
+    rmdir "${INSTALL_LIB_DIR}" 2>/dev/null && ok "제거: ${INSTALL_LIB_DIR}" || true
+    rmdir "$(dirname "${INSTALL_LIB_DIR}")" 2>/dev/null || true
     if [ -e "${META_FILE}" ]; then
         rm -f "${META_FILE}"
         ok "제거: ${META_FILE}"
@@ -266,9 +282,9 @@ action_install() {
     info "버전:      ${TCODE_VERSION}"
     info "다운로드:  ${url}"
 
-    mkdir -p "${INSTALL_BIN_DIR}" "${META_DIR}"
+    mkdir -p "${INSTALL_BIN_DIR}" "${INSTALL_LIB_DIR}" "${META_DIR}"
 
-    tmpfile="$(mktemp "${TMPDIR:-/tmp}/tcode-install.XXXXXX")"
+    tmpfile="$(mktemp "${INSTALL_LIB_DIR}/.tcode-install.XXXXXX")"
     cleanup_tmp() { rm -f "${tmpfile}"; }
     trap cleanup_tmp EXIT INT TERM
 
@@ -296,8 +312,10 @@ action_install() {
         xattr -d com.apple.quarantine "${tmpfile}" 2>/dev/null || true
     fi
 
-    # 원자적 교체 (mv 가 같은 파일시스템 내에서 atomic)
-    mv -f "${tmpfile}" "${INSTALL_BIN}"
+    # 실제 바이너리는 share/tcode/bin/ 에 원자적 교체.
+    # PATH 진입점은 별도 symlink 로 관리해 업데이트 시 atomic swap 가능하게 한다.
+    mv -f "${tmpfile}" "${INSTALL_BIN_TARGET}"
+    ln -sfn "${INSTALL_BIN_TARGET}" "${INSTALL_BIN}"
     trap - EXIT INT TERM
 
     # 설치된 버전 확인
@@ -319,8 +337,8 @@ action_install() {
 }
 EOF
 
-    # 업데이트 래퍼 설치
-    cat > "${UPDATER_BIN}" <<UPDATER_EOF
+    # 업데이트 래퍼 설치 (실제 스크립트 + symlink)
+    cat > "${UPDATER_BIN_TARGET}" <<UPDATER_EOF
 #!/usr/bin/env bash
 # tcode-update — 최신 install.sh 를 다시 받아 실행합니다.
 # 사용법:
@@ -340,7 +358,8 @@ exec env \\
     TCODE_RELEASE_BASE="${TCODE_RELEASE_BASE}" \\
     bash -c "curl -fsSL \"\${INSTALLER_URL}\" | bash -s -- \${ARGS[*]+\"\${ARGS[@]}\"}"
 UPDATER_EOF
-    chmod +x "${UPDATER_BIN}"
+    chmod +x "${UPDATER_BIN_TARGET}"
+    ln -sfn "${UPDATER_BIN_TARGET}" "${UPDATER_BIN}"
 
     printf '\n'
     if [ "${previous_ver}" = "none" ]; then
