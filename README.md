@@ -47,4 +47,4 @@ bash install.sh --uninstall
 
 ---
 
-마지막 release: [`v0.4.1`](https://github.com/ttbsoft/t-code/releases/tag/v0.4.1)
+마지막 release: [`v0.4.2`](https://github.com/ttbsoft/t-code/releases/tag/v0.4.2)
