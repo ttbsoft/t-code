@@ -13,8 +13,8 @@ curl -fsSL https://raw.githubusercontent.com/ttbsoft/t-code/main/install.sh | ba
 ```bash
 tcode --help
 tcode doctor
-tcode-update          # 다음 release 가 나오면 갱신
-tcode-update --check  # 업데이트 가능 여부만 확인
+tcode update          # 다음 release 가 나오면 갱신
+tcode update --check  # 업데이트 가능 여부만 확인
 ```
 
 ## 지원 플랫폼
